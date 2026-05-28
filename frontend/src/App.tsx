@@ -599,6 +599,10 @@ function App() {
         <main className="screen home-screen">
           <section className="hero-panel">
             <div className="hero-copy">
+              <div className="nightwhisper-mark">
+                <span className="mark-orb" aria-hidden="true" />
+                <span className="mark-text">NightWhisper After Dark</span>
+              </div>
               <p className="slogan">深夜有言，有人倾听</p>
               <p className="status-line">{statusLine}</p>
               <div className="intro-passage">
@@ -609,11 +613,17 @@ function App() {
                   在这里，你不用整理句子，不用解释情绪，也不用急着变得更好。只要开口，深夜就会替你把心事接住。
                 </p>
               </div>
+              <p className="hero-microcopy">夜深的时候，先说给风听，再说给我听。</p>
             </div>
 
             <div className={`orbital-stage state-${composerState}`}>
+              <div className="lunar-glow" aria-hidden="true" />
+              <div className="whisper-dust whisper-dust-left" aria-hidden="true" />
+              <div className="whisper-dust whisper-dust-right" aria-hidden="true" />
               <div className="halo-ring halo-ring-1" aria-hidden="true" />
               <div className="halo-ring halo-ring-2" aria-hidden="true" />
+              <div className="echo-arc echo-arc-1" aria-hidden="true" />
+              <div className="echo-arc echo-arc-2" aria-hidden="true" />
               <button
                 type="button"
                 className={`whisper-button mode-${recordingMode}`}
@@ -626,7 +636,15 @@ function App() {
                   }
                 }}
               >
+                <span className="button-aura" aria-hidden="true" />
+                <span className="button-shell" aria-hidden="true" />
                 <span className="button-core">
+                  <span className="button-glyph" aria-hidden="true">
+                    <span className="glyph-dot" />
+                    <span className="glyph-wave glyph-wave-1" />
+                    <span className="glyph-wave glyph-wave-2" />
+                    <span className="glyph-wave glyph-wave-3" />
+                  </span>
                   <span className="button-label">
                     {composerState === 'listening'
                       ? '正在倾诉'

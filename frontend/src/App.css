@@ -130,12 +130,47 @@
   text-align: center;
 }
 
+.nightwhisper-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 7px 12px 7px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(214, 224, 255, 0.08);
+  backdrop-filter: blur(12px);
+}
+
+.mark-orb {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 35% 32%, rgba(255, 255, 255, 0.95), rgba(233, 236, 255, 0.72) 34%, rgba(132, 129, 205, 0.2) 66%, transparent 70%),
+    radial-gradient(circle at 72% 72%, rgba(117, 144, 255, 0.28), transparent 58%);
+  box-shadow:
+    0 0 26px rgba(166, 173, 255, 0.35),
+    inset 0 0 18px rgba(255, 255, 255, 0.18);
+}
+
+.mark-text {
+  color: rgba(228, 235, 255, 0.78);
+  font-size: 0.74rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
 .intro-passage {
   margin-top: 20px;
   padding: 18px 18px 20px;
   border-radius: 22px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.03));
-  box-shadow: inset 0 0 0 1px rgba(222, 229, 255, 0.06);
+  background:
+    radial-gradient(circle at top left, rgba(163, 157, 255, 0.12), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.03));
+  box-shadow:
+    inset 0 0 0 1px rgba(222, 229, 255, 0.06),
+    0 14px 34px rgba(3, 8, 19, 0.16);
   backdrop-filter: blur(16px);
 }
 
@@ -169,12 +204,60 @@
   line-height: 1.7;
 }
 
+.hero-microcopy {
+  margin-top: 14px;
+  color: rgba(188, 199, 235, 0.56);
+  font-size: 0.8rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
 .orbital-stage {
   position: relative;
   display: grid;
   place-items: center;
   width: min(82vw, 360px);
   aspect-ratio: 1;
+}
+
+.lunar-glow {
+  position: absolute;
+  inset: 8%;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(182, 178, 255, 0.18) 0%, rgba(119, 144, 255, 0.12) 34%, transparent 66%);
+  filter: blur(18px);
+  animation: moonPulse 10s ease-in-out infinite;
+}
+
+.whisper-dust,
+.echo-arc {
+  position: absolute;
+  pointer-events: none;
+}
+
+.whisper-dust {
+  width: 80px;
+  height: 80px;
+  opacity: 0.5;
+  filter: blur(1px);
+  background-image:
+    radial-gradient(circle at 18% 42%, rgba(255, 255, 255, 0.72) 0 1px, transparent 1.8px),
+    radial-gradient(circle at 56% 24%, rgba(226, 232, 255, 0.54) 0 1px, transparent 2px),
+    radial-gradient(circle at 72% 62%, rgba(179, 198, 255, 0.58) 0 1px, transparent 2px),
+    radial-gradient(circle at 34% 76%, rgba(255, 255, 255, 0.42) 0 1px, transparent 2px);
+}
+
+.whisper-dust-left {
+  left: 6%;
+  top: 12%;
+  animation: driftDust 12s ease-in-out infinite alternate;
+}
+
+.whisper-dust-right {
+  right: 8%;
+  bottom: 16%;
+  animation: driftDust 14s ease-in-out infinite alternate-reverse;
 }
 
 .halo-ring {
@@ -195,6 +278,25 @@
   animation-duration: 11s;
 }
 
+.echo-arc {
+  border-radius: 50%;
+  border-top: 1px solid rgba(197, 210, 255, 0.2);
+  border-left: 1px solid transparent;
+  border-right: 1px solid transparent;
+  border-bottom: 1px solid transparent;
+}
+
+.echo-arc-1 {
+  inset: 1%;
+  transform: rotate(-18deg);
+}
+
+.echo-arc-2 {
+  inset: 18%;
+  transform: rotate(165deg);
+  opacity: 0.65;
+}
+
 .whisper-button {
   position: relative;
   z-index: 1;
@@ -204,12 +306,14 @@
   cursor: pointer;
   touch-action: none;
   background:
-    radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 0.2), transparent 22%),
-    linear-gradient(180deg, rgba(144, 138, 235, 0.4), rgba(46, 58, 104, 0.56));
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.38), transparent 18%),
+    radial-gradient(circle at 50% 50%, rgba(145, 154, 255, 0.2), transparent 62%),
+    linear-gradient(180deg, rgba(146, 139, 234, 0.52), rgba(44, 55, 98, 0.72));
   box-shadow:
-    inset 0 1px 1px rgba(255, 255, 255, 0.3),
+    inset 0 1px 1px rgba(255, 255, 255, 0.34),
+    inset 0 -18px 30px rgba(4, 8, 22, 0.24),
     0 20px 50px rgba(17, 23, 50, 0.55),
-    0 0 80px rgba(121, 120, 201, 0.22);
+    0 0 100px rgba(121, 120, 201, 0.22);
   transition:
     transform 180ms ease,
     box-shadow 240ms ease,
@@ -237,12 +341,14 @@
 .state-listening .whisper-button,
 .state-replying .whisper-button {
   background:
-    radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 0.28), transparent 24%),
-    linear-gradient(180deg, rgba(164, 148, 255, 0.56), rgba(56, 79, 145, 0.6));
+    radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 0.42), transparent 24%),
+    radial-gradient(circle at 50% 50%, rgba(169, 181, 255, 0.24), transparent 60%),
+    linear-gradient(180deg, rgba(170, 151, 255, 0.68), rgba(56, 79, 145, 0.72));
   box-shadow:
-    inset 0 1px 1px rgba(255, 255, 255, 0.38),
+    inset 0 1px 1px rgba(255, 255, 255, 0.42),
+    inset 0 -18px 32px rgba(8, 12, 30, 0.28),
     0 24px 80px rgba(36, 43, 87, 0.62),
-    0 0 120px rgba(121, 120, 201, 0.28);
+    0 0 140px rgba(121, 120, 201, 0.32);
 }
 
 .state-listening .halo-ring,
@@ -257,9 +363,75 @@
   place-items: center;
   align-content: center;
   border-radius: 50%;
-  background: rgba(7, 12, 26, 0.54);
+  background:
+    radial-gradient(circle at 30% 24%, rgba(255, 255, 255, 0.08), transparent 26%),
+    linear-gradient(180deg, rgba(11, 16, 32, 0.76), rgba(8, 12, 24, 0.92));
   backdrop-filter: blur(18px);
   padding: 18px;
+  box-shadow:
+    inset 0 0 0 1px rgba(222, 229, 255, 0.08),
+    inset 0 -14px 24px rgba(1, 3, 12, 0.42);
+}
+
+.button-aura,
+.button-shell {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+}
+
+.button-aura {
+  inset: -8%;
+  background: radial-gradient(circle, rgba(133, 139, 255, 0.2), transparent 58%);
+  filter: blur(18px);
+  opacity: 0.7;
+}
+
+.button-shell {
+  inset: 6%;
+  border: 1px solid rgba(226, 232, 255, 0.12);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    inset 0 30px 50px rgba(255, 255, 255, 0.03);
+}
+
+.button-glyph {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 16px;
+  min-height: 26px;
+}
+
+.glyph-dot,
+.glyph-wave {
+  background: linear-gradient(180deg, rgba(236, 240, 255, 0.96), rgba(149, 165, 255, 0.78));
+  box-shadow: 0 0 14px rgba(154, 170, 255, 0.24);
+}
+
+.glyph-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  align-self: center;
+}
+
+.glyph-wave {
+  width: 4px;
+  border-radius: 999px;
+}
+
+.glyph-wave-1 {
+  height: 15px;
+}
+
+.glyph-wave-2 {
+  height: 24px;
+}
+
+.glyph-wave-3 {
+  height: 18px;
 }
 
 .button-label {
@@ -579,6 +751,31 @@
 
   100% {
     transform: translate3d(2%, -3%, 0);
+  }
+}
+
+@keyframes moonPulse {
+  0%,
+  100% {
+    transform: scale(0.96);
+    opacity: 0.56;
+  }
+
+  50% {
+    transform: scale(1.05);
+    opacity: 0.9;
+  }
+}
+
+@keyframes driftDust {
+  0% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.35;
+  }
+
+  100% {
+    transform: translate3d(4px, -8px, 0);
+    opacity: 0.62;
   }
 }
 
