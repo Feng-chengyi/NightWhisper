@@ -601,6 +601,14 @@ function App() {
             <div className="hero-copy">
               <p className="slogan">深夜有言，有人倾听</p>
               <p className="status-line">{statusLine}</p>
+              <div className="intro-passage">
+                <p className="intro-line">
+                  当白天的声音慢慢退远，总有一些话，只适合在灯灭以后，轻轻交给夜色。
+                </p>
+                <p className="intro-line intro-line-soft">
+                  在这里，你不用整理句子，不用解释情绪，也不用急着变得更好。只要开口，深夜就会替你把心事接住。
+                </p>
+              </div>
             </div>
 
             <div className={`orbital-stage state-${composerState}`}>
@@ -777,28 +785,40 @@ function App() {
             </div>
           </section>
 
+          <section className="about-intro">
+            <p className="about-intro-kicker">给深夜留一盏小灯</p>
+            <h3>不是聊天工具，更像一封会回声的夜间来信。</h3>
+            <p className="about-intro-copy">
+              NightWhisper 想做的，不是替你回答世界，而是在那些失眠、委屈、疲惫、说不出口的时刻，
+              给你一段不被打断的安静陪伴。你说，夜色来听；你停顿，回信也会慢慢落下来。
+            </p>
+          </section>
+
           <section className="about-stack">
             <article className="about-block">
-              <p className="block-kicker">唯一核心</p>
-              <h3>只保留倾诉、来信、回听</h3>
+              <p className="block-kicker">深夜电台</p>
+              <h3>这里只有倾诉、回信，与那些被温柔收存的夜晚。</h3>
               <p>
-                没有信息流、没有社交公开、没有花哨功能。打开以后，只需要说话，然后安静听见一封属于你的深夜回信。
+                没有信息流，没有热闹广场，也没有需要学习的复杂功能。打开以后，你只需要把心事交出来，
+                剩下的交给这一段低声的夜间陪伴。
               </p>
             </article>
 
             <article className="about-block">
-              <p className="block-kicker">双端架构</p>
-              <h3>前端负责沉浸式交互，后端负责语音归档与 AI 回信</h3>
+              <p className="block-kicker">回信方式</p>
+              <h3>你的声音会被认真接住，再被写成一封贴近情绪的电台回信。</h3>
               <p>
-                浏览器收音后会把本次耳语发送到后端服务，由后端生成深夜电台式回信并落档，再由前端安静地播放给你。
+                当你说完，耳语会被安静送往后端，由 NightWhisper 的深夜主播语气轻轻整理、回应、归档，
+                然后再回到你耳边。它不说教，也不催促，只陪你把这一刻走完。
               </p>
             </article>
 
             <article className="about-block">
-              <p className="block-kicker">隐私与权限</p>
-              <h3>仅使用麦克风与夜间回信服务</h3>
+              <p className="block-kicker">私密边界</p>
+              <h3>每一封来信都留在属于你的夜里，不被围观，也不必展示。</h3>
               <p>
-                页面不展示你的文字内容，不做社交公开。你可以删除单条来信，也可以一键清空当前设备上的回听记录。
+                页面不主动展示你的文字，不把情绪变成公开内容。你可以随时回听、删除，或让一整晚的留声彻底归于安静，
+                不留下多余的喧哗痕迹。
               </p>
             </article>
           </section>
