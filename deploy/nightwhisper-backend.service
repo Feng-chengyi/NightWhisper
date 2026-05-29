@@ -1,0 +1,21 @@
+[Unit]
+Description=NightWhisper Backend Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/usr/local/nightwhisper/backend
+EnvironmentFile=-/usr/local/nightwhisper/backend/.env
+Environment=HOST=0.0.0.0
+Environment=PORT=3000
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/npm run start
+Restart=always
+RestartSec=5
+User=root
+Group=root
+StandardOutput=append:/var/log/nightwhisper-backend.log
+StandardError=append:/var/log/nightwhisper-backend-error.log
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+{
+  "name": "nightwhisper-monorepo",
+  "private": true,
+  "scripts": {
+    "install:all": "npm --prefix frontend install && npm --prefix backend install",
+    "build": "npm --prefix frontend run build",
+    "lint": "npm --prefix frontend run lint",
+    "dev:frontend": "npm --prefix frontend run dev -- --host 0.0.0.0",
+    "dev:backend": "npm --prefix backend run dev"
+  }
+}
