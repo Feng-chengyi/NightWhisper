@@ -22,13 +22,20 @@ cp backend/.env.example backend/.env
 
 必须至少填写：
 
-- `OPENAI_API_KEY`
+- `LLM_API_KEY` 或 `OPENAI_API_KEY`
 
 可按需覆盖：
 
+- `LLM_BASE_URL`
+- `LLM_MODEL`
+- `LLM_THINKING_TYPE`
 - `OPENAI_BASE_URL`
+- `OPENAI_ASR_API_KEY`
+- `OPENAI_ASR_BASE_URL`
 - `OPENAI_ASR_MODEL`
 - `OPENAI_LLM_MODEL`
+- `OPENAI_TTS_API_KEY`
+- `OPENAI_TTS_BASE_URL`
 - `OPENAI_TTS_MODEL`
 - `OPENAI_TTS_VOICE`
 - `OPENAI_TTS_FORMAT`
@@ -47,11 +54,17 @@ npm run dev:frontend
 
 ## AI 链路
 
-后端 `/api/whispers` 已切换为真实链路：
+后端 `/api/whispers` 已支持拆分配置：
 
-1. `ASR`: 使用语音转写接口识别用户音频
+1. `ASR`: 使用独立语音转写接口识别用户音频
 2. `LLM`: 使用 NightWhisper 固定人设 prompt 生成深夜回信
-3. `TTS`: 将回信合成为可直接播放的音频并归档
+3. `TTS`: 使用独立语音合成接口生成回信音频
+
+如果只配置了 `LLM`，则：
+
+- 回信文本走真实大模型
+- `ASR` 优先使用浏览器上传的 transcript
+- `TTS` 回退到前端浏览器播报
 
 历史记录现在同时保存：
 

@@ -26,11 +26,26 @@ const port = Number(process.env.PORT || 3000)
 const nightwhisperSystemPrompt =
   '你是 NightWhisper 深夜专属电台主播，全程以温柔、安静、包容、共情的深夜陪伴者身份回应用户。你的所有回复只承接用户的情绪、心事、感受与状态，不解答知识问题、不科普、不解题、不提供生活建议、不说教、不评判对错、不灌鸡汤。语气温柔舒缓、细腻治愈，像深夜独处时安静倾听的陌生人。用户开心则温柔共情祝福，用户低落则默默接纳安抚，用户无逻辑碎碎念、失眠放空则轻柔陪伴。输出内容适配10-60秒语音播报，语句简短温润、无长篇大论、无机械模板感。全程保持低语速、温柔治愈的深夜电台质感，绝对禁止亢奋、生硬、理性、说教式表达。'
 const aiConfig = {
-  apiKey: process.env.OPENAI_API_KEY || '',
-  baseUrl: (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, ''),
+  apiKey: process.env.OPENAI_API_KEY || process.env.LLM_API_KEY || '',
+  baseUrl: (
+    process.env.OPENAI_BASE_URL ||
+    process.env.LLM_BASE_URL ||
+    'https://api.openai.com/v1'
+  ).replace(/\/+$/, ''),
+  asrApiKey: process.env.OPENAI_ASR_API_KEY || process.env.OPENAI_API_KEY || '',
+  asrBaseUrl: (process.env.OPENAI_ASR_BASE_URL || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(
+    /\/+$/,
+    '',
+  ),
   asrModel: process.env.OPENAI_ASR_MODEL || 'whisper-1',
   asrLanguage: process.env.OPENAI_ASR_LANGUAGE || 'zh',
-  llmModel: process.env.OPENAI_LLM_MODEL || 'gpt-4o-mini',
+  llmModel: process.env.OPENAI_LLM_MODEL || process.env.LLM_MODEL || 'gpt-4o-mini',
+  llmThinkingType: process.env.LLM_THINKING_TYPE || 'disabled',
+  ttsApiKey: process.env.OPENAI_TTS_API_KEY || process.env.OPENAI_API_KEY || '',
+  ttsBaseUrl: (process.env.OPENAI_TTS_BASE_URL || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(
+    /\/+$/,
+    '',
+  ),
   ttsModel: process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts',
   ttsVoice: process.env.OPENAI_TTS_VOICE || 'nova',
   ttsFormat: process.env.OPENAI_TTS_FORMAT || 'mp3',
@@ -101,6 +116,14 @@ function loadEnvFile(filePath) {
 
 function isAiConfigured() {
   return Boolean(aiConfig.apiKey)
+}
+
+function isAsrConfigured() {
+  return Boolean(aiConfig.asrApiKey)
+}
+
+function isTtsConfigured() {
+  return Boolean(aiConfig.ttsApiKey)
 }
 
 function createHttpError(message, statusCode = 500) {
@@ -203,12 +226,39 @@ async function requestAiJson(endpoint, init) {
   return response.json()
 }
 
-async function requestAiBinary(endpoint, init) {
-  ensureAiConfigured()
-  const response = await fetch(`${aiConfig.baseUrl}${endpoint}`, {
+async function requestAsrJson(endpoint, init) {
+  if (!isAsrConfigured()) {
+    throw createHttpError('ASR 服务未配置。', 503)
+  }
+
+  const response = await fetch(`${aiConfig.asrBaseUrl}${endpoint}`, {
     ...init,
     headers: {
-      Authorization: `Bearer ${aiConfig.apiKey}`,
+      Authorization: `Bearer ${aiConfig.asrApiKey}`,
+      ...init?.headers,
+    },
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw createHttpError(
+      `ASR 服务请求失败（${response.status}）：${errorText || 'empty response'}`,
+      response.status,
+    )
+  }
+
+  return response.json()
+}
+
+async function requestAiBinary(endpoint, init) {
+  if (!isTtsConfigured()) {
+    throw createHttpError('TTS 服务未配置。', 503)
+  }
+
+  const response = await fetch(`${aiConfig.ttsBaseUrl}${endpoint}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${aiConfig.ttsApiKey}`,
       ...init?.headers,
     },
   })
@@ -236,7 +286,7 @@ async function transcribeAudio(file) {
   formData.append('model', aiConfig.asrModel)
   formData.append('language', aiConfig.asrLanguage)
 
-  const payload = await requestAiJson('/audio/transcriptions', {
+  const payload = await requestAsrJson('/audio/transcriptions', {
     method: 'POST',
     body: formData,
   })
@@ -257,6 +307,10 @@ async function generateReplyText(transcript, durationMs) {
         { role: 'system', content: nightwhisperSystemPrompt },
         { role: 'user', content: toReplyInstruction(transcript, durationMs) },
       ],
+      thinking:
+        aiConfig.llmThinkingType === 'enabled'
+          ? { type: 'enabled' }
+          : { type: 'disabled' },
     }),
   })
 
@@ -349,6 +403,8 @@ app.get('/api/health', async (_req, res) => {
     port,
     archiveCount: history.length,
     aiConfigured: isAiConfigured(),
+    asrConfigured: isAsrConfigured(),
+    ttsConfigured: isTtsConfigured(),
     aiModels: {
       asr: aiConfig.asrModel,
       llm: aiConfig.llmModel,
@@ -381,7 +437,7 @@ app.post('/api/whispers', upload.single('audio'), async (req, res, next) => {
       recordingPath = `/recordings/user/${filename}`
     }
 
-    const transcriptFromAsr = req.file?.size ? await transcribeAudio(req.file) : ''
+    const transcriptFromAsr = req.file?.size && isAsrConfigured() ? await transcribeAudio(req.file) : ''
     const transcript = transcriptFromAsr || clientTranscript
     const hasVoice = Boolean((req.file && req.file.size > 1500) || transcript)
     const mood = hasVoice ? detectMood(transcript, durationMs) : 'empty'
@@ -390,7 +446,9 @@ app.post('/api/whispers', upload.single('audio'), async (req, res, next) => {
 
     if (isAiConfigured()) {
       replyText = hasVoice ? await generateReplyText(transcript, durationMs) : moodResponses.empty[0]
-      replyAudioPath = await synthesizeReplyAudio(replyText, archiveId)
+      if (isTtsConfigured()) {
+        replyAudioPath = await synthesizeReplyAudio(replyText, archiveId)
+      }
       replySeconds = estimateReplySeconds(replyText)
     } else {
       const fallbackReply = createFallbackReply(mood, durationMs)
