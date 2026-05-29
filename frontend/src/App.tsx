@@ -300,11 +300,11 @@ function App() {
     try {
       const health = await fetchJson<HealthResponse>(`${API_BASE}/api/health`)
       if (!health.aiConfigured) {
-        setBackendState('error')
+        setBackendState('ready')
         if (!silent) {
-          setStatusLine('AI 服务在线，但还没有配置真实模型密钥')
+          setStatusLine('真实 AI 还没配置完成，当前先使用温柔兜底回信')
         }
-        return false
+        return true
       }
 
       setBackendState('ready')
