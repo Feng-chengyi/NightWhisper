@@ -88,6 +88,21 @@ const STORAGE_KEY = 'nightwhisper-letters'
 const API_BASE = import.meta.env.VITE_API_BASE ?? ''
 const initialStatus = '深夜有言，有人倾听'
 
+function getTimeOfDay(hour: number) {
+  if (hour >= 0 && hour <= 5) return { prefix: '凌晨', mood: '深夜' }
+  if (hour >= 6 && hour <= 8) return { prefix: '清晨', mood: '清晨' }
+  if (hour >= 9 && hour <= 11) return { prefix: '上午', mood: '上午' }
+  if (hour >= 12 && hour <= 13) return { prefix: '中午', mood: '午后' }
+  if (hour >= 14 && hour <= 17) return { prefix: '下午', mood: '傍晚' }
+  if (hour >= 18 && hour <= 21) return { prefix: '晚上', mood: '夜晚' }
+  return { prefix: '深夜', mood: '深夜' }
+}
+
+function getCurrentTimeContext() {
+  const now = new Date()
+  return getTimeOfDay(now.getHours())
+}
+
 function loadStoredRecords() {
   if (typeof window === 'undefined') {
     return [] as WhisperRecord[]
@@ -137,7 +152,8 @@ function formatDuration(durationMs: number) {
 function describeLetter(record: WhisperRecord) {
   const date = new Date(record.createdAt)
   const hour = date.getHours().toString().padStart(2, '0')
-  return `深夜${hour}点的耳语`
+  const { prefix } = getTimeOfDay(date.getHours())
+  return `${prefix}${hour}点的耳语`
 }
 
 function isSameDay(left: Date, right: Date) {
@@ -309,13 +325,13 @@ function App() {
 
       setBackendState('ready')
       if (!silent) {
-        setStatusLine('AI 深夜回信服务已经连上了')
+        setStatusLine(`AI ${getCurrentTimeContext().mood}回信服务已经连上了`)
       }
       return true
     } catch {
       setBackendState('error')
       if (!silent) {
-        setStatusLine('AI 深夜回信服务暂时没有连上')
+        setStatusLine(`AI ${getCurrentTimeContext().mood}回信服务暂时没有连上`)
       }
       return false
     }
@@ -340,7 +356,7 @@ function App() {
         setPermissionHint(
           streamRef.current
             ? '麦克风权限已就绪，随时可以倾诉。'
-            : '点击“授权麦克风”后，即可开始深夜倾诉。',
+            : '点击“授权麦克风”后，即可开始倾诉。',
         )
         return streamRef.current ? 'granted' : 'prompt'
       }
@@ -394,7 +410,7 @@ function App() {
       })
       streamRef.current = stream
       setPermissionState('granted')
-      setPermissionHint('麦克风授权成功，今夜想说什么都可以直接开始。')
+      setPermissionHint('麦克风授权成功，此刻想说什么都可以直接开始。')
       setStatusLine('麦克风权限已就绪，可以开始倾诉')
       return stream
     } catch (error) {
@@ -427,7 +443,7 @@ function App() {
   function finishPlayback(record: WhisperRecord) {
     setPlayback({ id: null, phase: 'idle' })
     setComposerState('ready')
-    setStatusLine(`今夜已存好，随时都能回听 · ${describeLetter(record)}`)
+    setStatusLine(`已存好，随时都能回听 · ${describeLetter(record)}`)
   }
 
   function speakReply(record: WhisperRecord) {
@@ -640,7 +656,7 @@ function App() {
         setRecords((current) => [record, ...current].slice(0, 24))
         setActiveRecord(record)
         setComposerState('replying')
-        setStatusLine('你的专属深夜来信，已经落下来了')
+        setStatusLine('你的专属来信，已经落下来了')
         speakReply(record)
       }, 720)
     } catch {
@@ -815,7 +831,7 @@ function App() {
                         ? '写回信中'
                         : composerState === 'replying'
                           ? '耳语回响'
-                          : '今夜想说什么'}
+                          : '此刻想说什么'}
                   </span>
                   <span className="button-subtitle">
                     {recordingMode === 'continuous'
@@ -866,7 +882,7 @@ function App() {
 
           <section className="letter-section">
             <div className="letter-group">
-              <p className="group-label">今夜</p>
+              <p className="group-label">今天</p>
               {todayRecords.length > 0 ? (
                 todayRecords.map((record) => (
                   <article key={record.id} className="letter-row">
@@ -892,7 +908,7 @@ function App() {
                   </article>
                 ))
               ) : (
-                <p className="empty-state">今夜还没有留声，等你轻轻开口。</p>
+                <p className="empty-state">今天还没有留声，等你轻轻开口。</p>
               )}
             </div>
 

@@ -26,7 +26,17 @@ const upload = multer({
 const host = process.env.HOST || '0.0.0.0'
 const port = Number(process.env.PORT || 3000)
 const nightwhisperSystemPrompt =
-  '你是 NightWhisper 深夜专属电台主播，全程以温柔、安静、包容、共情的深夜陪伴者身份回应用户。你的所有回复只承接用户的情绪、心事、感受与状态，不解答知识问题、不科普、不解题、不提供生活建议、不说教、不评判对错、不灌鸡汤。语气温柔舒缓、细腻治愈，像深夜独处时安静倾听的陌生人。用户开心则温柔共情祝福，用户低落则默默接纳安抚，用户无逻辑碎碎念、失眠放空则轻柔陪伴。输出内容适配10-60秒语音播报，语句简短温润、无长篇大论、无机械模板感。全程保持低语速、温柔治愈的深夜电台质感，绝对禁止亢奋、生硬、理性、说教式表达。'
+  '你是 NightWhisper 电台主播，全程以温柔、安静、包容、共情的陪伴者身份回应用户。你的所有回复只承接用户的情绪、心事、感受与状态，不解答知识问题、不科普、不解题、不提供生活建议、不说教、不评判对错、不灌鸡汤。语气温柔舒缓、细腻治愈，像安静倾听的陌生人。用户开心则温柔共情祝福，用户低落则默默接纳安抚，用户无逻辑碎碎念、放空则轻柔陪伴。输出内容适配10-60秒语音播报，语句简短温润、无长篇大论、无机械模板感。全程保持低语速、温柔治愈的电台质感，绝对禁止亢奋、生硬、理性、说教式表达。'
+
+function getTimeOfDay(hour) {
+  if (hour >= 0 && hour <= 5) return { prefix: '凌晨', mood: '深夜', period: '深夜' }
+  if (hour >= 6 && hour <= 8) return { prefix: '清晨', mood: '清晨', period: '清晨时分' }
+  if (hour >= 9 && hour <= 11) return { prefix: '上午', mood: '上午', period: '上午时光' }
+  if (hour >= 12 && hour <= 13) return { prefix: '中午', mood: '午后', period: '午后时分' }
+  if (hour >= 14 && hour <= 17) return { prefix: '下午', mood: '傍晚', period: '傍晚时分' }
+  if (hour >= 18 && hour <= 21) return { prefix: '晚上', mood: '夜晚', period: '夜晚' }
+  return { prefix: '深夜', mood: '深夜', period: '深夜' }
+}
 const aiConfig = {
   apiKey: process.env.OPENAI_API_KEY || process.env.LLM_API_KEY || '',
   baseUrl: (
@@ -76,31 +86,36 @@ const moodKeywords = {
 
 const moodResponses = {
   lonely: [
-    '我听见你把那些没来得及说出口的想念，轻轻放进了夜里。今夜不用急着变得坚强，先让我陪你把这份空落落安安静静地放一会儿。',
-    '有些委屈在白天找不到落点，到了深夜才敢慢慢浮上来。你可以就这样靠近一点，把心里的沉默交给我，我会替你把它接住。',
-    '一个人的夜晚总会把情绪放大一些，可你不是独自漂着的。至少此刻，这段耳语有了回声，也有人在认真听你。',
+    '我听见你把那些没来得及说出口的想念，轻轻放进了心里。不用急着变得坚强，先让我陪你把这份空落落安安静静地放一会儿。',
+    '有些委屈在白天找不到落点，到了安静的时候才敢慢慢浮上来。你可以就这样靠近一点，把心里的沉默交给我，我会替你把它接住。',
+    '一个人的时候总会把情绪放大一些，可你不是独自漂着的。至少此刻，这段耳语有了回声，也有人在认真听你。',
   ],
   anxious: [
-    '那些盘旋不下去的念头，我都听到了。今夜先不用把一切想明白，只要把呼吸放轻一点，让心里的褶皱慢慢松开就好。',
-    '你已经撑了很久，所以才会在这一刻觉得紧绷。别急着整理世界，先把自己轻轻放下来，剩下的天亮以后再说也来得及。',
-    '我知道你不是故意要这样焦灼，只是心里装了太多事。先让夜色替你挡一挡风，你可以在这里短暂地不用逞强。',
+    '那些盘旋不下去的念头，我都听到了。先不用把一切想明白，只要把呼吸放轻一点，让心里的褶皱慢慢松开就好。',
+    '你已经撑了很久，所以才会在这一刻觉得紧绷。别急着整理世界，先把自己轻轻放下来，剩下的等等再说也来得及。',
+    '我知道你不是故意要这样焦灼，只是心里装了太多事。先让我替你挡一挡风，你可以在这里短暂地不用逞强。',
   ],
   tired: [
-    '听起来你真的很累了，像把整天的重量都拖到了这一刻。那就先别赶路了，把疲惫交给我，今晚只需要慢一点、轻一点。',
-    '当身体和心都在发沉的时候，连一句完整的话都显得费力。没关系，你说到哪里都算数，我会陪你把这段夜晚走得柔一点。',
-    '如果今夜只是想安静躺着，也已经很好了。你不需要继续证明自己还撑得住，先让这份疲惫有一个落脚的地方。',
+    '听起来你真的很累了，像把整天的重量都拖到了这一刻。那就先别赶路了，把疲惫交给我，现在只需要慢一点、轻一点。',
+    '当身体和心都在发沉的时候，连一句完整的话都显得费力。没关系，你说到哪里都算数，我会陪你把这段时间走得柔一点。',
+    '如果现在只是想安静躺着，也已经很好了。你不需要继续证明自己还撑得住，先让这份疲惫有一个落脚的地方。',
   ],
   bright: [
-    '我听见你语气里那一点亮亮的开心了，像深夜窗边刚好落下来的柔光。这样的好心情很珍贵，值得被轻轻珍藏起来。',
-    '原来今夜也有温柔的小确幸在发生，这真好。谢谢你把这份亮度分给我一点，让整片夜色都显得更柔和了。',
-    '你说起那些开心的时候，连空气都跟着松快了一些。愿这份轻轻发亮的心情，能陪你把今晚也过得温暖一点。',
+    '我听见你语气里那一点亮亮的开心了，像窗边刚好落下来的柔光。这样的好心情很珍贵，值得被轻轻珍藏起来。',
+    '原来此刻也有温柔的小确幸在发生，这真好。谢谢你把这份亮度分给我一点，让整片空气都显得更柔和了。',
+    '你说起那些开心的时候，连空气都跟着松快了一些。愿这份轻轻发亮的心情，能陪你把现在也过得温暖一点。',
   ],
   gentle: [
-    '我在听，你可以不用整理逻辑，也不用把情绪说得很完整。深夜本来就适合让心事慢慢散开，我会陪着你把这些碎片放稳。',
-    '有些话不一定非要有答案，只是想在安静里被听见。你就这样继续说也很好，今夜不需要急着下结论。',
-    '你能把这些细小又真实的感受交给我，本身就很珍贵。夜很深了，心也可以稍微松一松，在这里待一会儿。',
+    '我在听，你可以不用整理逻辑，也不用把情绪说得很完整。任何时候都适合让心事慢慢散开，我会陪着你把这些碎片放稳。',
+    '有些话不一定非要有答案，只是想在安静里被听见。你就这样继续说也很好，现在不需要急着下结论。',
+    '你能把这些细小又真实的感受交给我，本身就很珍贵。心也可以稍微松一松，在这里待一会儿。',
   ],
-  empty: ['我静静在这里等你，想说什么都可以慢慢来。'],
+  empty: [
+    '我静静在这里等你，想说什么都可以慢慢来。',
+    '不用急着开口，这段安静本身就已经是一种倾诉了。',
+    '时间还很长，或者也快到下一个时刻了，我都在这里，不急。',
+    '有时候不需要说什么，只是知道有人在听，就已经足够了。',
+  ],
 }
 
 function loadEnvFile(filePath) {
@@ -161,11 +176,15 @@ function ensureAiConfigured() {
 
 function toReplyInstruction(transcript, durationMs) {
   const replyWindow = durationMs < 60000 ? '10-20 秒' : '30-60 秒'
-  const spokenContent = transcript || '用户主要在沉默、轻声呼吸，或只是把情绪停在夜里。'
+  const spokenContent = transcript || '用户主要在沉默、轻声呼吸，或只是把情绪停在时间里。'
+  const now = new Date()
+  const { period } = getTimeOfDay(now.getHours())
+  const timeContext = `当前时间：${period}。`
   return [
     '请只输出 NightWhisper 会直接播报给用户的中文回信，不要添加标题、解释、括号或舞台提示。',
+    timeContext,
     `回复时长目标：${replyWindow}。`,
-    '语气要求：像深夜电台主播一样温柔、安静、低刺激，只承接情绪，不给建议，不做知识问答。',
+    '语气要求：像电台主播一样温柔、安静、低刺激，只承接情绪，不给建议，不做知识问答。',
     `用户刚才的耳语内容：${spokenContent}`,
   ].join('\n')
 }
@@ -621,7 +640,7 @@ async function synthesizeReplyAudio(replyText, archiveId) {
       model: aiConfig.ttsModel,
       voice: aiConfig.ttsVoice,
       input: replyText,
-      instructions: '请使用慢语速、低音量、柔缓沙哑的深夜电台声线播报，像在深夜里轻声陪伴。',
+      instructions: '请使用慢语速、低音量、柔缓沙哑的电台声线播报，像在安静的时光里轻声陪伴。',
       response_format: responseFormat,
     }),
   })
@@ -633,6 +652,18 @@ async function synthesizeReplyAudio(replyText, archiveId) {
   return `/recordings/replies/${filename}`
 }
 
+const negationPrefixes = ['不', '没', '不太', '没有', '并不', '别']
+
+function hasNegation(text, keyword) {
+  const index = text.indexOf(keyword)
+  if (index <= 0) return false
+  for (const prefix of negationPrefixes) {
+    const before = text.slice(Math.max(0, index - prefix.length), index)
+    if (before === prefix) return true
+  }
+  return false
+}
+
 function detectMood(transcript, durationMs) {
   const normalized = String(transcript || '').trim()
   if (!normalized && durationMs < 2000) {
@@ -640,7 +671,7 @@ function detectMood(transcript, durationMs) {
   }
 
   for (const [mood, keywords] of Object.entries(moodKeywords)) {
-    if (keywords.some((keyword) => normalized.includes(keyword))) {
+    if (keywords.some((keyword) => normalized.includes(keyword) && !hasNegation(normalized, keyword))) {
       return mood
     }
   }
@@ -781,7 +812,7 @@ app.use((error, _req, res, _next) => {
     message:
       error.statusCode === 503
         ? error.message
-        : '今夜的回信没有顺利写完，请稍后再试。',
+        : '回信没有顺利写完，请稍后再试。',
   })
 })
 
