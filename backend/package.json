@@ -9,11 +9,7 @@
   },
   "dependencies": {
     "cors": "^2.8.5",
-    "dotenv": "^17.4.2",
     "express": "^4.21.2",
-    "multer": "^2.0.2",
-    "tencentcloud-sdk-nodejs-asr": "^4.1.237",
-    "tencentcloud-sdk-nodejs-hunyuan": "^4.1.188",
-    "tencentcloud-sdk-nodejs-tts": "^4.1.237"
+    "multer": "^2.0.2"
   }
 }
