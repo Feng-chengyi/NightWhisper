@@ -1,6 +1,7 @@
 import cors from 'cors'
 import express from 'express'
 import multer from 'multer'
+import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import fsSync from 'node:fs'
 import fs from 'node:fs/promises'
@@ -49,6 +50,19 @@ const aiConfig = {
   ttsModel: process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts',
   ttsVoice: process.env.OPENAI_TTS_VOICE || 'nova',
   ttsFormat: process.env.OPENAI_TTS_FORMAT || 'mp3',
+  asrProvider: (process.env.ASR_PROVIDER || 'openai').toLowerCase(),
+  ttsProvider: (process.env.TTS_PROVIDER || 'openai').toLowerCase(),
+  xfyunAppId: process.env.XFYUN_APP_ID || '',
+  xfyunApiKey: process.env.XFYUN_API_KEY || '',
+  xfyunApiSecret: process.env.XFYUN_API_SECRET || '',
+  xfyunIatLanguage: process.env.XFYUN_IAT_LANGUAGE || 'zh_cn',
+  xfyunIatAccent: process.env.XFYUN_IAT_ACCENT || 'mandarin',
+  xfyunIatVadeos: Number(process.env.XFYUN_IAT_VAD_EOS || 10000),
+  xfyunTtsVoice: process.env.XFYUN_TTS_VOICE || 'x4_lingfeixi_lingyue_emo',
+  xfyunTtsSpeed: Number(process.env.XFYUN_TTS_SPEED || 35),
+  xfyunTtsVolume: Number(process.env.XFYUN_TTS_VOLUME || 50),
+  xfyunTtsPitch: Number(process.env.XFYUN_TTS_PITCH || 50),
+  xfyunTtsAue: process.env.XFYUN_TTS_AUE || 'lame',
 }
 
 const moodKeywords = {
@@ -119,10 +133,16 @@ function isAiConfigured() {
 }
 
 function isAsrConfigured() {
+  if (aiConfig.asrProvider === 'xfyun') {
+    return Boolean(aiConfig.xfyunAppId && aiConfig.xfyunApiKey && aiConfig.xfyunApiSecret)
+  }
   return Boolean(aiConfig.asrApiKey)
 }
 
 function isTtsConfigured() {
+  if (aiConfig.ttsProvider === 'xfyun') {
+    return Boolean(aiConfig.xfyunAppId && aiConfig.xfyunApiKey && aiConfig.xfyunApiSecret)
+  }
   return Boolean(aiConfig.ttsApiKey)
 }
 
@@ -205,6 +225,265 @@ function resolveRecordingExtension(mimeType, fallback) {
   return fallback
 }
 
+function createXfyunAuthUrl(baseUrl, host, pathName, apiKey, apiSecret) {
+  const date = new Date().toUTCString()
+  const signatureOrigin = `host: ${host}\ndate: ${date}\nGET ${pathName} HTTP/1.1`
+  const signature = fsSync
+    .createHmac('sha256', apiSecret)
+    .update(signatureOrigin)
+    .digest('base64')
+  const authorizationOrigin = `api_key="${apiKey}", algorithm="hmac-sha256", headers="host date request-line", signature="${signature}"`
+  const authorization = Buffer.from(authorizationOrigin).toString('base64')
+  const url = new URL(baseUrl)
+  url.searchParams.set('authorization', authorization)
+  url.searchParams.set('date', date)
+  url.searchParams.set('host', host)
+  return url.toString()
+}
+
+async function convertToLinear16(audioBuffer) {
+  return new Promise((resolve, reject) => {
+    const ffmpeg = spawn('ffmpeg', [
+      '-hide_banner',
+      '-loglevel',
+      'error',
+      '-i',
+      'pipe:0',
+      '-ac',
+      '1',
+      '-ar',
+      '16000',
+      '-f',
+      's16le',
+      'pipe:1',
+    ])
+    const chunks = []
+    const stderrChunks = []
+
+    ffmpeg.stdout.on('data', (chunk) => {
+      chunks.push(chunk)
+    })
+    ffmpeg.stderr.on('data', (chunk) => {
+      stderrChunks.push(chunk)
+    })
+    ffmpeg.on('error', (error) => {
+      reject(error)
+    })
+    ffmpeg.on('close', (code) => {
+      if (code !== 0) {
+        const message = Buffer.concat(stderrChunks).toString('utf8').trim()
+        reject(createHttpError(`ffmpeg 转码失败：${message || `exit code ${code}`}`, 502))
+        return
+      }
+      resolve(Buffer.concat(chunks))
+    })
+
+    ffmpeg.stdin.end(audioBuffer)
+  })
+}
+
+function toUtf8Base64(content) {
+  return Buffer.from(content, 'utf8').toString('base64')
+}
+
+async function transcribeAudioWithXfyun(file) {
+  const host = 'iat-api.xfyun.cn'
+  const pathName = '/v2/iat'
+  const wsUrl = createXfyunAuthUrl(
+    `wss://${host}${pathName}`,
+    host,
+    pathName,
+    aiConfig.xfyunApiKey,
+    aiConfig.xfyunApiSecret,
+  )
+  const pcm = await convertToLinear16(file.buffer)
+  const chunkSize = 1280
+
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(wsUrl)
+    let transcript = ''
+    let finished = false
+
+    ws.addEventListener('open', () => {
+      const first = {
+        common: { app_id: aiConfig.xfyunAppId },
+        business: {
+          domain: 'iat',
+          language: aiConfig.xfyunIatLanguage,
+          accent: aiConfig.xfyunIatAccent,
+          vad_eos: aiConfig.xfyunIatVadeos,
+        },
+      }
+      let offset = 0
+      let status = 0
+
+      while (offset < pcm.length) {
+        const next = Math.min(offset + chunkSize, pcm.length)
+        const audioChunk = pcm.subarray(offset, next)
+        const data = {
+          status,
+          format: 'audio/L16;rate=16000',
+          encoding: 'raw',
+          audio: audioChunk.toString('base64'),
+        }
+        ws.send(JSON.stringify(status === 0 ? { ...first, data } : { data }))
+        status = 1
+        offset = next
+      }
+
+      ws.send(
+        JSON.stringify({
+          data: {
+            status: 2,
+            format: 'audio/L16;rate=16000',
+            encoding: 'raw',
+            audio: '',
+          },
+        }),
+      )
+    })
+
+    ws.addEventListener('message', (event) => {
+      try {
+        const payload = JSON.parse(String(event.data))
+        if (payload.code !== 0) {
+          throw createHttpError(
+            `讯飞 ASR 错误（${payload.code}）：${payload.message || 'unknown'}`,
+            502,
+          )
+        }
+
+        const segments = payload?.data?.result?.ws
+        if (Array.isArray(segments)) {
+          for (const segment of segments) {
+            if (!Array.isArray(segment?.cw)) {
+              continue
+            }
+            for (const candidate of segment.cw) {
+              if (typeof candidate?.w === 'string') {
+                transcript += candidate.w
+              }
+            }
+          }
+        }
+
+        if (payload?.data?.status === 2 && !finished) {
+          finished = true
+          ws.close()
+          resolve(sanitizeReplyText(transcript))
+        }
+      } catch (error) {
+        if (!finished) {
+          finished = true
+          ws.close()
+          reject(error)
+        }
+      }
+    })
+
+    ws.addEventListener('error', () => {
+      if (!finished) {
+        finished = true
+        reject(createHttpError('讯飞 ASR WebSocket 连接失败。', 502))
+      }
+    })
+
+    ws.addEventListener('close', () => {
+      if (!finished) {
+        finished = true
+        resolve(sanitizeReplyText(transcript))
+      }
+    })
+  })
+}
+
+async function synthesizeReplyAudioWithXfyun(replyText, archiveId) {
+  const host = 'tts-api.xfyun.cn'
+  const pathName = '/v2/tts'
+  const wsUrl = createXfyunAuthUrl(
+    `wss://${host}${pathName}`,
+    host,
+    pathName,
+    aiConfig.xfyunApiKey,
+    aiConfig.xfyunApiSecret,
+  )
+  const voiceText = toUtf8Base64(replyText)
+
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(wsUrl)
+    const chunks = []
+    let finished = false
+
+    ws.addEventListener('open', () => {
+      ws.send(
+        JSON.stringify({
+          common: { app_id: aiConfig.xfyunAppId },
+          business: {
+            aue: aiConfig.xfyunTtsAue,
+            auf: 'audio/L16;rate=16000',
+            vcn: aiConfig.xfyunTtsVoice,
+            speed: aiConfig.xfyunTtsSpeed,
+            volume: aiConfig.xfyunTtsVolume,
+            pitch: aiConfig.xfyunTtsPitch,
+            tte: 'UTF8',
+          },
+          data: {
+            status: 2,
+            text: voiceText,
+          },
+        }),
+      )
+    })
+
+    ws.addEventListener('message', async (event) => {
+      try {
+        const payload = JSON.parse(String(event.data))
+        if (payload.code !== 0) {
+          throw createHttpError(
+            `讯飞 TTS 错误（${payload.code}）：${payload.message || 'unknown'}`,
+            502,
+          )
+        }
+
+        const audioBase64 = payload?.data?.audio
+        if (typeof audioBase64 === 'string' && audioBase64.length > 0) {
+          chunks.push(Buffer.from(audioBase64, 'base64'))
+        }
+
+        if (payload?.data?.status === 2 && !finished) {
+          finished = true
+          ws.close()
+          const ext = aiConfig.xfyunTtsAue === 'lame' ? 'mp3' : 'pcm'
+          const filename = `${archiveId}.${ext}`
+          const fullPath = path.join(replyRecordingsDir, filename)
+          await fs.writeFile(fullPath, Buffer.concat(chunks))
+          resolve(`/recordings/replies/${filename}`)
+        }
+      } catch (error) {
+        if (!finished) {
+          finished = true
+          ws.close()
+          reject(error)
+        }
+      }
+    })
+
+    ws.addEventListener('error', () => {
+      if (!finished) {
+        finished = true
+        reject(createHttpError('讯飞 TTS WebSocket 连接失败。', 502))
+      }
+    })
+
+    ws.addEventListener('close', () => {
+      if (!finished) {
+        finished = true
+        reject(createHttpError('讯飞 TTS 连接提前关闭。', 502))
+      }
+    })
+  })
+}
+
 async function requestAiJson(endpoint, init) {
   ensureAiConfigured()
   const response = await fetch(`${aiConfig.baseUrl}${endpoint}`, {
@@ -279,6 +558,10 @@ async function transcribeAudio(file) {
     return ''
   }
 
+  if (aiConfig.asrProvider === 'xfyun') {
+    return transcribeAudioWithXfyun(file)
+  }
+
   const formData = new FormData()
   const extension = resolveRecordingExtension(file.mimetype || 'audio/webm', '.webm')
   const audioBlob = new Blob([file.buffer], { type: file.mimetype || 'audio/webm' })
@@ -323,6 +606,10 @@ async function generateReplyText(transcript, durationMs) {
 }
 
 async function synthesizeReplyAudio(replyText, archiveId) {
+  if (aiConfig.ttsProvider === 'xfyun') {
+    return synthesizeReplyAudioWithXfyun(replyText, archiveId)
+  }
+
   const responseFormat = aiConfig.ttsFormat || 'mp3'
   const audioBuffer = await requestAiBinary('/audio/speech', {
     method: 'POST',
@@ -406,10 +693,10 @@ app.get('/api/health', async (_req, res) => {
     asrConfigured: isAsrConfigured(),
     ttsConfigured: isTtsConfigured(),
     aiModels: {
-      asr: aiConfig.asrModel,
+      asr: aiConfig.asrProvider === 'xfyun' ? 'xfyun-iat' : aiConfig.asrModel,
       llm: aiConfig.llmModel,
-      tts: aiConfig.ttsModel,
-      voice: aiConfig.ttsVoice,
+      tts: aiConfig.ttsProvider === 'xfyun' ? 'xfyun-tts' : aiConfig.ttsModel,
+      voice: aiConfig.ttsProvider === 'xfyun' ? aiConfig.xfyunTtsVoice : aiConfig.ttsVoice,
     },
     timestamp: new Date().toISOString(),
   })
