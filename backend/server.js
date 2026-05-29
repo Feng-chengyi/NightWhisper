@@ -2,14 +2,19 @@ import cors from 'cors'
 import express from 'express'
 import multer from 'multer'
 import { randomUUID } from 'node:crypto'
+import fsSync from 'node:fs'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
+loadEnvFile(path.join(__dirname, '.env'))
+
 const dataRoot = process.env.ARCHIVE_DIR || path.join(__dirname, 'data')
 const recordingsDir = path.join(dataRoot, 'recordings')
+const userRecordingsDir = path.join(recordingsDir, 'user')
+const replyRecordingsDir = path.join(recordingsDir, 'replies')
 const archiveFile = path.join(dataRoot, 'letters.json')
 const app = express()
 const upload = multer({
@@ -18,6 +23,18 @@ const upload = multer({
 })
 const host = process.env.HOST || '0.0.0.0'
 const port = Number(process.env.PORT || 3000)
+const nightwhisperSystemPrompt =
+  '你是 NightWhisper 深夜专属电台主播，全程以温柔、安静、包容、共情的深夜陪伴者身份回应用户。你的所有回复只承接用户的情绪、心事、感受与状态，不解答知识问题、不科普、不解题、不提供生活建议、不说教、不评判对错、不灌鸡汤。语气温柔舒缓、细腻治愈，像深夜独处时安静倾听的陌生人。用户开心则温柔共情祝福，用户低落则默默接纳安抚，用户无逻辑碎碎念、失眠放空则轻柔陪伴。输出内容适配10-60秒语音播报，语句简短温润、无长篇大论、无机械模板感。全程保持低语速、温柔治愈的深夜电台质感，绝对禁止亢奋、生硬、理性、说教式表达。'
+const aiConfig = {
+  apiKey: process.env.OPENAI_API_KEY || '',
+  baseUrl: (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, ''),
+  asrModel: process.env.OPENAI_ASR_MODEL || 'whisper-1',
+  asrLanguage: process.env.OPENAI_ASR_LANGUAGE || 'zh',
+  llmModel: process.env.OPENAI_LLM_MODEL || 'gpt-4o-mini',
+  ttsModel: process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts',
+  ttsVoice: process.env.OPENAI_TTS_VOICE || 'nova',
+  ttsFormat: process.env.OPENAI_TTS_FORMAT || 'mp3',
+}
 
 const moodKeywords = {
   lonely: ['孤独', '一个人', '没人', '想你', '想念', '难过', '委屈', '失去', '空落落'],
@@ -28,32 +45,217 @@ const moodKeywords = {
 }
 
 const moodResponses = {
-  lonely: [
-    '我听见你把那些没来得及说出口的想念，轻轻放进了夜里。今夜不用急着变得坚强，先让我陪你把这份空落落安安静静地放一会儿。',
-    '有些委屈在白天找不到落点，到了深夜才敢慢慢浮上来。你可以就这样靠近一点，把心里的沉默交给我，我会替你把它接住。',
-    '一个人的夜晚总会把情绪放大一些，可你不是独自漂着的。至少此刻，这段耳语有了回声，也有人在认真听你。'
-  ],
-  anxious: [
-    '那些盘旋不下去的念头，我都听到了。今夜先不用把一切想明白，只要把呼吸放轻一点，让心里的褶皱慢慢松开就好。',
-    '你已经撑了很久，所以才会在这一刻觉得紧绷。别急着整理世界，先把自己轻轻放下来，剩下的天亮以后再说也来得及。',
-    '我知道你不是故意要这样焦灼，只是心里装了太多事。先让夜色替你挡一挡风，你可以在这里短暂地不用逞强。'
-  ],
-  tired: [
-    '听起来你真的很累了，像把整天的重量都拖到了这一刻。那就先别赶路了，把疲惫交给我，今晚只需要慢一点、轻一点。',
-    '当身体和心都在发沉的时候，连一句完整的话都显得费力。没关系，你说到哪里都算数，我会陪你把这段夜晚走得柔一点。',
-    '如果今夜只是想安静躺着，也已经很好了。你不需要继续证明自己还撑得住，先让这份疲惫有一个落脚的地方。'
-  ],
-  bright: [
-    '我听见你语气里那一点亮亮的开心了，像深夜窗边刚好落下来的柔光。这样的好心情很珍贵，值得被轻轻珍藏起来。',
-    '原来今夜也有温柔的小确幸在发生，这真好。谢谢你把这份亮度分给我一点，让整片夜色都显得更柔和了。',
-    '你说起那些开心的时候，连空气都跟着松快了一些。愿这份轻轻发亮的心情，能陪你把今晚也过得温暖一点。'
-  ],
-  gentle: [
-    '我在听，你可以不用整理逻辑，也不用把情绪说得很完整。深夜本来就适合让心事慢慢散开，我会陪着你把这些碎片放稳。',
-    '有些话不一定非要有答案，只是想在安静里被听见。你就这样继续说也很好，今夜不需要急着下结论。',
-    '你能把这些细小又真实的感受交给我，本身就很珍贵。夜很深了，心也可以稍微松一松，在这里待一会儿。'
-  ],
   empty: ['我静静在这里等你，想说什么都可以慢慢来。'],
+}
+
+function loadEnvFile(filePath) {
+  try {
+    const source = fsSync.readFileSync(filePath, 'utf8')
+    for (const line of source.split(/\r?\n/)) {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed.startsWith('#')) {
+        continue
+      }
+
+      const separatorIndex = trimmed.indexOf('=')
+      if (separatorIndex < 0) {
+        continue
+      }
+
+      const key = trimmed.slice(0, separatorIndex).trim()
+      const rawValue = trimmed.slice(separatorIndex + 1).trim()
+      const normalizedValue = rawValue.replace(/^['"]|['"]$/g, '')
+      if (key && !(key in process.env)) {
+        process.env[key] = normalizedValue
+      }
+    }
+  } catch {
+    // Ignore absent env files so local and deployed service configs can coexist.
+  }
+}
+
+function isAiConfigured() {
+  return Boolean(aiConfig.apiKey)
+}
+
+function createHttpError(message, statusCode = 500) {
+  const error = new Error(message)
+  error.statusCode = statusCode
+  return error
+}
+
+function ensureAiConfigured() {
+  if (!isAiConfigured()) {
+    throw createHttpError('AI 链路尚未配置完成，请先填写后端 OPENAI_API_KEY。', 503)
+  }
+}
+
+function toReplyInstruction(transcript, durationMs) {
+  const replyWindow = durationMs < 60000 ? '10-20 秒' : '30-60 秒'
+  const spokenContent = transcript || '用户主要在沉默、轻声呼吸，或只是把情绪停在夜里。'
+  return [
+    '请只输出 NightWhisper 会直接播报给用户的中文回信，不要添加标题、解释、括号或舞台提示。',
+    `回复时长目标：${replyWindow}。`,
+    '语气要求：像深夜电台主播一样温柔、安静、低刺激，只承接情绪，不给建议，不做知识问答。',
+    `用户刚才的耳语内容：${spokenContent}`,
+  ].join('\n')
+}
+
+function extractAssistantText(payload) {
+  const chatText = payload?.choices?.[0]?.message?.content
+  if (typeof chatText === 'string') {
+    return chatText
+  }
+
+  if (Array.isArray(chatText)) {
+    return chatText
+      .map((part) => (typeof part?.text === 'string' ? part.text : ''))
+      .join(' ')
+      .trim()
+  }
+
+  if (typeof payload?.output_text === 'string') {
+    return payload.output_text
+  }
+
+  return ''
+}
+
+function sanitizeReplyText(replyText) {
+  return String(replyText || '').replace(/\s+/g, ' ').trim()
+}
+
+function estimateReplySeconds(replyText) {
+  const seconds = Math.round(replyText.length / 3.2)
+  return Math.max(10, Math.min(60, seconds || 10))
+}
+
+function resolveRecordingExtension(mimeType, fallback) {
+  if (mimeType.includes('mpeg') || mimeType.includes('mp3')) {
+    return '.mp3'
+  }
+  if (mimeType.includes('wav')) {
+    return '.wav'
+  }
+  if (mimeType.includes('ogg')) {
+    return '.ogg'
+  }
+  if (mimeType.includes('mp4') || mimeType.includes('m4a')) {
+    return '.m4a'
+  }
+  if (mimeType.includes('webm')) {
+    return '.webm'
+  }
+  return fallback
+}
+
+async function requestAiJson(endpoint, init) {
+  ensureAiConfigured()
+  const response = await fetch(`${aiConfig.baseUrl}${endpoint}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${aiConfig.apiKey}`,
+      ...init?.headers,
+    },
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw createHttpError(
+      `AI 服务请求失败（${response.status}）：${errorText || 'empty response'}`,
+      response.status,
+    )
+  }
+
+  return response.json()
+}
+
+async function requestAiBinary(endpoint, init) {
+  ensureAiConfigured()
+  const response = await fetch(`${aiConfig.baseUrl}${endpoint}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${aiConfig.apiKey}`,
+      ...init?.headers,
+    },
+  })
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw createHttpError(
+      `AI 语音生成失败（${response.status}）：${errorText || 'empty response'}`,
+      response.status,
+    )
+  }
+
+  return Buffer.from(await response.arrayBuffer())
+}
+
+async function transcribeAudio(file) {
+  if (!file?.buffer?.length) {
+    return ''
+  }
+
+  const formData = new FormData()
+  const extension = resolveRecordingExtension(file.mimetype || 'audio/webm', '.webm')
+  const audioBlob = new Blob([file.buffer], { type: file.mimetype || 'audio/webm' })
+  formData.append('file', audioBlob, `nightwhisper${extension}`)
+  formData.append('model', aiConfig.asrModel)
+  formData.append('language', aiConfig.asrLanguage)
+
+  const payload = await requestAiJson('/audio/transcriptions', {
+    method: 'POST',
+    body: formData,
+  })
+
+  return sanitizeReplyText(payload?.text || payload?.transcript || '')
+}
+
+async function generateReplyText(transcript, durationMs) {
+  const payload = await requestAiJson('/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: aiConfig.llmModel,
+      temperature: 0.85,
+      messages: [
+        { role: 'system', content: nightwhisperSystemPrompt },
+        { role: 'user', content: toReplyInstruction(transcript, durationMs) },
+      ],
+    }),
+  })
+
+  const replyText = sanitizeReplyText(extractAssistantText(payload))
+  if (!replyText) {
+    throw createHttpError('AI 没有返回可播报的回信内容。', 502)
+  }
+
+  return replyText
+}
+
+async function synthesizeReplyAudio(replyText, archiveId) {
+  const responseFormat = aiConfig.ttsFormat || 'mp3'
+  const audioBuffer = await requestAiBinary('/audio/speech', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: aiConfig.ttsModel,
+      voice: aiConfig.ttsVoice,
+      input: replyText,
+      instructions: '请使用慢语速、低音量、柔缓沙哑的深夜电台声线播报，像在深夜里轻声陪伴。',
+      response_format: responseFormat,
+    }),
+  })
+
+  const safeExtension = responseFormat === 'wav' ? 'wav' : responseFormat === 'aac' ? 'aac' : 'mp3'
+  const filename = `${archiveId}.${safeExtension}`
+  const fullPath = path.join(replyRecordingsDir, filename)
+  await fs.writeFile(fullPath, audioBuffer)
+  return `/recordings/replies/${filename}`
 }
 
 function detectMood(transcript, durationMs) {
@@ -75,15 +277,9 @@ function detectMood(transcript, durationMs) {
   return normalized ? 'gentle' : 'empty'
 }
 
-function createReply(mood, durationMs) {
-  const pool = moodResponses[mood] || moodResponses.empty
-  const replyText = pool[Math.floor(Math.random() * pool.length)] || moodResponses.empty[0]
-  const replySeconds = durationMs < 60000 ? 10 + Math.floor(Math.random() * 11) : 30 + Math.floor(Math.random() * 31)
-  return { replyText, replySeconds }
-}
-
 async function ensureStorage() {
-  await fs.mkdir(recordingsDir, { recursive: true })
+  await fs.mkdir(userRecordingsDir, { recursive: true })
+  await fs.mkdir(replyRecordingsDir, { recursive: true })
   try {
     await fs.access(archiveFile)
   } catch {
@@ -119,6 +315,13 @@ app.get('/api/health', async (_req, res) => {
     host,
     port,
     archiveCount: history.length,
+    aiConfigured: isAiConfigured(),
+    aiModels: {
+      asr: aiConfig.asrModel,
+      llm: aiConfig.llmModel,
+      tts: aiConfig.ttsModel,
+      voice: aiConfig.ttsVoice,
+    },
     timestamp: new Date().toISOString(),
   })
 })
@@ -130,22 +333,30 @@ app.get('/api/history', async (_req, res) => {
 
 app.post('/api/whispers', upload.single('audio'), async (req, res, next) => {
   try {
-    const durationMs = Number(req.body.durationMs || 0)
-    const transcript = String(req.body.transcript || '').trim()
+    const durationMs = Math.max(1000, Number(req.body.durationMs || 0))
+    const clientTranscript = String(req.body.transcript || '').trim()
     const createdAt = new Date().toISOString()
-    const hasVoice = Boolean((req.file && req.file.size > 1500) || transcript)
-    const mood = hasVoice ? detectMood(transcript, durationMs) : 'empty'
-    const { replyText, replySeconds } = createReply(mood, durationMs)
     const archiveId = randomUUID()
     let recordingPath = null
+    let replyAudioPath = null
 
     if (req.file && req.file.size > 0) {
-      const ext = req.file.mimetype.includes('ogg') ? '.ogg' : '.webm'
+      const ext = resolveRecordingExtension(req.file.mimetype || 'audio/webm', '.webm')
       const filename = `${archiveId}${ext}`
-      const fullPath = path.join(recordingsDir, filename)
+      const fullPath = path.join(userRecordingsDir, filename)
       await fs.writeFile(fullPath, req.file.buffer)
-      recordingPath = `/recordings/${filename}`
+      recordingPath = `/recordings/user/${filename}`
     }
+
+    const transcriptFromAsr = req.file?.size ? await transcribeAudio(req.file) : ''
+    const transcript = transcriptFromAsr || clientTranscript
+    const hasVoice = Boolean((req.file && req.file.size > 1500) || transcript)
+    const mood = hasVoice ? detectMood(transcript, durationMs) : 'empty'
+    const replyText = hasVoice
+      ? await generateReplyText(transcript, durationMs)
+      : moodResponses.empty[0]
+    replyAudioPath = await synthesizeReplyAudio(replyText, archiveId)
+    const replySeconds = estimateReplySeconds(replyText)
 
     const archiveItem = {
       id: archiveId,
@@ -156,6 +367,7 @@ app.post('/api/whispers', upload.single('audio'), async (req, res, next) => {
       replySeconds,
       transcript,
       recordingPath,
+      replyAudioPath,
     }
 
     const history = await readArchive()
@@ -168,7 +380,9 @@ app.post('/api/whispers', upload.single('audio'), async (req, res, next) => {
       mood,
       replyText,
       replySeconds,
+      transcript,
       recordingPath,
+      replyAudioPath,
     })
   } catch (error) {
     next(error)
@@ -177,7 +391,12 @@ app.post('/api/whispers', upload.single('audio'), async (req, res, next) => {
 
 app.use((error, _req, res, _next) => {
   console.error('[nightwhisper-backend]', error)
-  res.status(500).json({ message: '今夜的回信没有顺利写完，请稍后再试。' })
+  res.status(error.statusCode || 500).json({
+    message:
+      error.statusCode === 503
+        ? error.message
+        : '今夜的回信没有顺利写完，请稍后再试。',
+  })
 })
 
 ensureStorage().then(() => {

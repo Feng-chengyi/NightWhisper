@@ -5,6 +5,7 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=/usr/local/nightwhisper/backend
+EnvironmentFile=-/usr/local/nightwhisper/backend/.env
 Environment=HOST=0.0.0.0
 Environment=PORT=3000
 Environment=NODE_ENV=production

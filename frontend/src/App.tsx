@@ -7,6 +7,7 @@ type RecordingMode = 'idle' | 'hold' | 'continuous'
 type PlaybackPhase = 'idle' | 'user' | 'ai'
 type Mood = 'lonely' | 'anxious' | 'tired' | 'bright' | 'gentle' | 'empty'
 type BackendState = 'checking' | 'ready' | 'error'
+type PermissionState = 'checking' | 'prompt' | 'granted' | 'denied' | 'unsupported' | 'insecure'
 
 interface WhisperRecord {
   id: string
@@ -18,6 +19,7 @@ interface WhisperRecord {
   replySeconds: number
   userAudioDataUrl?: string
   serverRecordingPath?: string | null
+  replyAudioPath?: string | null
   transcript?: string
 }
 
@@ -28,6 +30,8 @@ interface WhisperResponse {
   replyText: string
   replySeconds: number
   recordingPath?: string | null
+  replyAudioPath?: string | null
+  transcript?: string
 }
 
 interface HistoryResponse {
@@ -40,7 +44,13 @@ interface HistoryResponse {
     replySeconds: number
     transcript?: string
     recordingPath?: string | null
+    replyAudioPath?: string | null
   }>
+}
+
+interface HealthResponse {
+  status: string
+  aiConfigured: boolean
 }
 
 interface SpeechRecognitionResultLike {
@@ -172,6 +182,7 @@ function mergeServerRecords(current: WhisperRecord[], incoming: HistoryResponse[
       replySeconds: item.replySeconds,
       transcript: item.transcript,
       serverRecordingPath: item.recordingPath ?? null,
+      replyAudioPath: item.replyAudioPath ?? null,
       userAudioDataUrl: existing?.userAudioDataUrl,
     })
   }
@@ -201,7 +212,8 @@ function App() {
     id: null,
     phase: 'idle',
   })
-  const [permissionReady, setPermissionReady] = useState(false)
+  const [permissionState, setPermissionState] = useState<PermissionState>('checking')
+  const [permissionHint, setPermissionHint] = useState('首次使用请先授权麦克风，之后就能一键倾诉。')
   const [backendState, setBackendState] = useState<BackendState>('checking')
 
   const streamRef = useRef<MediaStream | null>(null)
@@ -222,6 +234,7 @@ function App() {
 
   useEffect(() => {
     void (async () => {
+      await syncPermissionState()
       const backendOk = await checkBackend(true)
       if (!backendOk) {
         return
@@ -249,6 +262,25 @@ function App() {
     }
   }, [])
 
+  function describePermission(state: PermissionState) {
+    if (state === 'granted') {
+      return { badge: '已授权', detail: '麦克风权限已就绪，长按或轻触都可直接倾诉。' }
+    }
+    if (state === 'denied') {
+      return { badge: '被拒绝', detail: '麦克风权限被拒绝，请在浏览器地址栏权限设置中重新允许。' }
+    }
+    if (state === 'unsupported') {
+      return { badge: '不支持', detail: '当前浏览器不支持麦克风录音，请更换 Chrome / Safari。' }
+    }
+    if (state === 'insecure') {
+      return { badge: '需 HTTPS', detail: '麦克风只能在 HTTPS 或 localhost 下申请。' }
+    }
+    if (state === 'prompt') {
+      return { badge: '待授权', detail: '点击下方按钮即可立即申请麦克风权限。' }
+    }
+    return { badge: '检测中', detail: '正在确认当前浏览器的麦克风权限状态。' }
+  }
+
   const sortedRecords = useMemo(
     () =>
       [...records].sort(
@@ -266,7 +298,15 @@ function App() {
 
   async function checkBackend(silent: boolean) {
     try {
-      await fetchJson<{ status: string }>(`${API_BASE}/api/health`)
+      const health = await fetchJson<HealthResponse>(`${API_BASE}/api/health`)
+      if (!health.aiConfigured) {
+        setBackendState('error')
+        if (!silent) {
+          setStatusLine('AI 服务在线，但还没有配置真实模型密钥')
+        }
+        return false
+      }
+
       setBackendState('ready')
       if (!silent) {
         setStatusLine('AI 深夜回信服务已经连上了')
@@ -281,26 +321,100 @@ function App() {
     }
   }
 
+  async function syncPermissionState() {
+    if (!window.isSecureContext) {
+      setPermissionState('insecure')
+      setPermissionHint('当前页面不是安全上下文，请通过 HTTPS 打开后再授权麦克风。')
+      return 'insecure'
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setPermissionState('unsupported')
+      setPermissionHint('当前浏览器不支持麦克风访问。')
+      return 'unsupported'
+    }
+
+    try {
+      if (!navigator.permissions?.query) {
+        setPermissionState(streamRef.current ? 'granted' : 'prompt')
+        setPermissionHint(
+          streamRef.current
+            ? '麦克风权限已就绪，随时可以倾诉。'
+            : '点击“授权麦克风”后，即可开始深夜倾诉。',
+        )
+        return streamRef.current ? 'granted' : 'prompt'
+      }
+
+      const status = await navigator.permissions.query({ name: 'microphone' as PermissionName })
+      if (status.state === 'granted') {
+        setPermissionState('granted')
+        setPermissionHint('麦克风权限已授权，长按或轻触按钮都能直接录音。')
+        return 'granted'
+      }
+
+      if (status.state === 'denied') {
+        setPermissionState('denied')
+        setPermissionHint('麦克风权限当前为拒绝，请去浏览器权限设置改为允许。')
+        return 'denied'
+      }
+
+      setPermissionState('prompt')
+      setPermissionHint('点击“授权麦克风”后，浏览器会弹出权限请求。')
+      return 'prompt'
+    } catch {
+      setPermissionState(streamRef.current ? 'granted' : 'prompt')
+      setPermissionHint(
+        streamRef.current ? '麦克风权限已就绪。' : '点击“授权麦克风”后，浏览器会申请录音权限。',
+      )
+      return streamRef.current ? 'granted' : 'prompt'
+    }
+  }
+
+  async function requestMicrophonePermission() {
+    if (!window.isSecureContext) {
+      setPermissionState('insecure')
+      setPermissionHint('当前页面不是 HTTPS，浏览器不会弹出麦克风授权。')
+      setStatusLine('请先用 HTTPS 打开 NightWhisper，再申请麦克风权限')
+      throw new Error('麦克风权限仅支持 HTTPS 或 localhost。')
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setPermissionState('unsupported')
+      setPermissionHint('当前浏览器不支持麦克风访问。')
+      throw new Error('当前浏览器暂不支持麦克风访问。')
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      })
+      streamRef.current = stream
+      setPermissionState('granted')
+      setPermissionHint('麦克风授权成功，今夜想说什么都可以直接开始。')
+      setStatusLine('麦克风权限已就绪，可以开始倾诉')
+      return stream
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'NotAllowedError') {
+        setPermissionState('denied')
+        setPermissionHint('你刚刚拒绝了麦克风权限，请在浏览器设置里改为允许。')
+        setStatusLine('麦克风权限被拒绝，请到浏览器权限设置重新允许')
+      } else {
+        setPermissionState('prompt')
+        setPermissionHint('暂时没能打开麦克风，可点击按钮再次申请。')
+      }
+      throw error
+    }
+  }
+
   async function ensureStream() {
     if (streamRef.current) {
       return streamRef.current
     }
-
-    if (!navigator.mediaDevices?.getUserMedia) {
-      throw new Error('当前浏览器暂不支持麦克风访问。')
-    }
-
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-    })
-
-    streamRef.current = stream
-    setPermissionReady(true)
-    return stream
+    return requestMicrophonePermission()
   }
 
   function stopPlayback() {
@@ -310,11 +424,29 @@ function App() {
     setPlayback({ id: null, phase: 'idle' })
   }
 
+  function finishPlayback(record: WhisperRecord) {
+    setPlayback({ id: null, phase: 'idle' })
+    setComposerState('ready')
+    setStatusLine(`今夜已存好，随时都能回听 · ${describeLetter(record)}`)
+  }
+
   function speakReply(record: WhisperRecord) {
+    const replySource = record.replyAudioPath ? `${API_BASE}${record.replyAudioPath}` : undefined
+    if (replySource) {
+      const audio = new Audio(replySource)
+      audioRef.current = audio
+      audio.onended = () => finishPlayback(record)
+      audio.onerror = () => {
+        audioRef.current = null
+        finishPlayback(record)
+      }
+      setPlayback({ id: record.id, phase: 'ai' })
+      void audio.play().catch(() => finishPlayback(record))
+      return
+    }
+
     if (!window.speechSynthesis) {
-      setPlayback({ id: null, phase: 'idle' })
-      setComposerState('ready')
-      setStatusLine('今夜已存好，随时都能回听')
+      finishPlayback(record)
       return
     }
 
@@ -324,9 +456,7 @@ function App() {
     utterance.pitch = 0.82
     utterance.volume = 0.82
     utterance.onend = () => {
-      setPlayback({ id: null, phase: 'idle' })
-      setComposerState('ready')
-      setStatusLine('今夜已存好，随时都能回听')
+      finishPlayback(record)
     }
 
     setPlayback({ id: record.id, phase: 'ai' })
@@ -407,6 +537,9 @@ function App() {
     }
 
     try {
+      if (permissionState !== 'granted') {
+        await requestMicrophonePermission()
+      }
       const stream = await ensureStream()
       stopPlayback()
       transcriptRef.current = ''
@@ -497,9 +630,10 @@ function App() {
         mood: payload.mood,
         replyText: payload.replyText,
         replySeconds: payload.replySeconds,
-        transcript,
+        transcript: payload.transcript || transcript,
         userAudioDataUrl: blob.size > 0 ? await blobToDataUrl(blob) : undefined,
         serverRecordingPath: payload.recordingPath ?? null,
+        replyAudioPath: payload.replyAudioPath ?? null,
       }
 
       window.setTimeout(() => {
@@ -616,6 +750,35 @@ function App() {
               <p className="hero-microcopy">夜深的时候，先说给风听，再说给我听。</p>
             </div>
 
+            {permissionState !== 'granted' && (
+              <section className="permission-panel" aria-live="polite">
+                <p className="permission-kicker">麦克风权限</p>
+                <h3>{describePermission(permissionState).badge}</h3>
+                <p className="permission-copy">{permissionHint || describePermission(permissionState).detail}</p>
+                <div className="permission-actions">
+                  <button
+                    type="button"
+                    className="solid-button"
+                    onClick={() => {
+                      void requestMicrophonePermission().catch(() => {})
+                    }}
+                    disabled={permissionState === 'insecure' || permissionState === 'unsupported'}
+                  >
+                    {permissionState === 'denied' ? '重新申请权限' : '授权麦克风'}
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost-button"
+                    onClick={() => {
+                      void syncPermissionState()
+                    }}
+                  >
+                    刷新权限状态
+                  </button>
+                </div>
+              </section>
+            )}
+
             <div className={`orbital-stage state-${composerState}`}>
               <div className="lunar-glow" aria-hidden="true" />
               <div className="whisper-dust whisper-dust-left" aria-hidden="true" />
@@ -676,7 +839,7 @@ function App() {
               </div>
               <div>
                 <span className="strip-label">麦克风</span>
-                <strong>{permissionReady ? '已授权' : '待授权'}</strong>
+                <strong>{describePermission(permissionState).badge}</strong>
               </div>
               <div>
                 <span className="strip-label">本次倾诉</span>
